@@ -483,6 +483,45 @@ namespace hex::plugin::builtin {
         std::string m_input;
     };
 
+    class PopupPaste : public ViewHexEditor::Popup {
+    public:
+        explicit PopupPaste(const Region &selection) : m_selection(selection) {}
+
+        void draw(ViewHexEditor *editor) override {
+            auto width = ImGui::GetWindowWidth();
+
+            ImGui::TextWrapped("hex.builtin.view.hex_editor.menu.edit.paste.popup.description"_lang);
+            ImGui::Text("hex.builtin.view.hex_editor.menu.edit.paste.popup.hint"_lang);
+
+            ImGui::Separator();
+
+            if (ImGui::Button("hex.builtin.view.hex_editor.menu.edit.paste.popup.button.selection"_lang, ImVec2(width / 4, 0))) {
+                editor->closePopup();
+            }
+
+            ImGui::SameLine();
+            if (ImGui::Button("hex.builtin.view.hex_editor.menu.edit.paste.popup.button.everything"_lang, ImVec2(width / 4, 0))) {
+                editor->closePopup();
+            }
+
+            ImGui::SameLine(ImGui::GetWindowWidth() - ImGui::GetCursorPosX() - (width / 6));
+            if (ImGui::Button("hex.ui.common.cancel"_lang, ImVec2(width / 6, 0))) {
+                editor->closePopup();
+            }
+        }
+
+        [[nodiscard]] UnlocalizedString getTitle() const override {
+            return "hex.builtin.view.hex_editor.menu.edit.paste.popup.title"_lang;
+        }
+
+    private:
+        static void paste() {
+
+        }
+
+        const Region &m_selection;
+    };
+
     /* Hex Editor */
 
     ViewHexEditor::ViewHexEditor() : View::Window("hex.builtin.view.hex_editor.name", ICON_VS_FILE_BINARY) {
@@ -1183,8 +1222,9 @@ namespace hex::plugin::builtin {
 
         /* Paste */
         ContentRegistry::Interface::addMenuItem({ "hex.builtin.menu.edit", "hex.builtin.view.hex_editor.menu.edit.paste" }, ICON_VS_OUTPUT, 1450, CurrentView + CTRLCMD + Keys::V,
-                                                [] {
-                                                    pasteBytes(ImHexApi::HexEditor::getSelection().value_or( ImHexApi::HexEditor::ProviderRegion(Region { 0, 0 }, ImHexApi::Provider::get())), true);
+                                                [this] {
+                                                    this->openPopup<PopupPaste>(ImHexApi::HexEditor::getSelection().value_or( ImHexApi::HexEditor::ProviderRegion(Region { 0, 0 }, ImHexApi::Provider::get())));
+                                                    //pasteBytes(ImHexApi::HexEditor::getSelection().value_or( ImHexApi::HexEditor::ProviderRegion(Region { 0, 0 }, ImHexApi::Provider::get())), true);
                                                 },
                                                 ImHexApi::HexEditor::isSelectionValid,
                                                 this);
