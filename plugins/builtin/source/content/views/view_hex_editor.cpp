@@ -483,12 +483,14 @@ namespace hex::plugin::builtin {
         std::string m_input;
     };
 
-    class PopupPaste : public ViewHexEditor::Popup {
+    class PopupPasteBehaviour final : public ViewHexEditor::Popup {
     public:
-        explicit PopupPaste(const Region &selection) : m_selection(selection) {}
+        explicit PopupPasteBehaviour(const Region &selection, const auto &pasteCallback) : m_selection(), m_pasteCallback(pasteCallback) {
+            m_selection = Region { .address=selection.getStartAddress(), .size=selection.getSize() };
+        }
 
         void draw(ViewHexEditor *editor) override {
-            auto width = ImGui::GetWindowWidth();
+            const auto width = ImGui::GetWindowWidth();
 
             ImGui::TextWrapped("hex.builtin.view.hex_editor.menu.edit.paste.popup.description"_lang);
             ImGui::Text("hex.builtin.view.hex_editor.menu.edit.paste.popup.hint"_lang);
@@ -496,16 +498,19 @@ namespace hex::plugin::builtin {
             ImGui::Separator();
 
             if (ImGui::Button("hex.builtin.view.hex_editor.menu.edit.paste.popup.button.selection"_lang, ImVec2(width / 4, 0))) {
+                m_pasteCallback(m_selection, true);
                 editor->closePopup();
             }
 
             ImGui::SameLine();
             if (ImGui::Button("hex.builtin.view.hex_editor.menu.edit.paste.popup.button.everything"_lang, ImVec2(width / 4, 0))) {
+                m_pasteCallback(m_selection, false);
                 editor->closePopup();
             }
 
             ImGui::SameLine(ImGui::GetWindowWidth() - ImGui::GetCursorPosX() - (width / 6));
             if (ImGui::Button("hex.ui.common.cancel"_lang, ImVec2(width / 6, 0))) {
+                // Cancel the action, without updating settings nor pasting.
                 editor->closePopup();
             }
         }
@@ -515,11 +520,8 @@ namespace hex::plugin::builtin {
         }
 
     private:
-        static void paste() {
-
-        }
-
-        const Region &m_selection;
+        Region m_selection;
+        std::function<void(const Region &selection, bool selectionCheck)> m_pasteCallback;
     };
 
     /* Hex Editor */
@@ -760,6 +762,36 @@ namespace hex::plugin::builtin {
         // Write bytes
         auto size = selectionCheck ? std::min(buffer.size(), selection.getSize()) : buffer.size();
         provider->write(selection.getStartAddress(), buffer.data(), size);
+    }
+
+    void ViewHexEditor::processPasteBehaviour(const Region &selection) {
+        if (selection.getSize() > 1) {
+            // Apply normal "paste over selection" behaviour when pasting over several bytes
+            pasteBytes(selection, true);
+            return;
+        }
+
+        // Selection is over one byte, we have to check the settings to decide the course of action
+
+        auto setting = ContentRegistry::Settings::read<std::string>(
+            "hex.builtin.setting.hex_editor",
+            "hex.builtin.setting.hex_editor.paste_behaviour",
+            "none");
+
+        if (setting == "everything")
+            pasteBytes(selection, false);
+        else if (setting == "selection")
+            pasteBytes(selection, true);
+        else
+            this->openPopup<PopupPasteBehaviour>(selection,
+                [](const Region &selection, const bool selectionCheck) {
+                    ContentRegistry::Settings::write<std::string>(
+                        "hex.builtin.setting.hex_editor",
+                        "hex.builtin.setting.hex_editor.paste_behaviour",
+                        selectionCheck ? "selection" : "everything");
+                    pasteBytes(selection, selectionCheck);
+                });
+
     }
 
     static void copyString(const Region &selection) {
@@ -1223,8 +1255,7 @@ namespace hex::plugin::builtin {
         /* Paste */
         ContentRegistry::Interface::addMenuItem({ "hex.builtin.menu.edit", "hex.builtin.view.hex_editor.menu.edit.paste" }, ICON_VS_OUTPUT, 1450, CurrentView + CTRLCMD + Keys::V,
                                                 [this] {
-                                                    this->openPopup<PopupPaste>(ImHexApi::HexEditor::getSelection().value_or( ImHexApi::HexEditor::ProviderRegion(Region { 0, 0 }, ImHexApi::Provider::get())));
-                                                    //pasteBytes(ImHexApi::HexEditor::getSelection().value_or( ImHexApi::HexEditor::ProviderRegion(Region { 0, 0 }, ImHexApi::Provider::get())), true);
+                                                    processPasteBehaviour(ImHexApi::HexEditor::getSelection().value_or( ImHexApi::HexEditor::ProviderRegion(Region { 0, 0 }, ImHexApi::Provider::get())));
                                                 },
                                                 ImHexApi::HexEditor::isSelectionValid,
                                                 this);
